@@ -296,6 +296,16 @@ using lt::torrent_status;
 
 FILE* g_log_file = nullptr;
 
+int peer_index(lt::tcp::endpoint addr, std::vector<lt::peer_info> const& peers)
+{
+	using namespace lt;
+	auto i = std::find_if(peers.begin(), peers.end()
+		, [&addr](peer_info const& pi) { return pi.ip == addr; });
+	if (i == peers.end()) return -1;
+
+	return int(i - peers.begin());
+}
+
 // returns the number of lines printed
 int print_peer_info(std::string& out
 	, std::vector<lt::peer_info> const& peers, int max_lines)
@@ -914,7 +924,8 @@ void print_piece(lt::partial_piece_info const& pp
 	string_view last_color;
 	for (int j = 0; j < num_blocks; ++j)
 	{
-		bool const snubbed = piece >= 0 ? bool(peers[piece].flags & lt::peer_info::snubbed) : false;
+		int const index = peer_index(pp.blocks[j].peer(), peers) % 36;
+		bool const snubbed = index >= 0 ? bool(peers[index].flags & lt::peer_info::snubbed) : false;
 		char const* chr = " ";
 		char const* color = "";
 
