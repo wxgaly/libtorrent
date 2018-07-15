@@ -334,7 +334,7 @@ namespace libtorrent {
 			| a
 			| ((mode & aux::open_mode::no_cache) ? FILE_FLAG_WRITE_THROUGH : 0);
 
-		if (!(mode & open_mode::sparse))
+		if (!(mode & aux::open_mode::sparse))
 		{
 			// Enable privilege required by SetFileValidData()
 			// https://docs.microsoft.com/en-us/windows/desktop/api/fileapi/nf-fileapi-setfilevaliddata
