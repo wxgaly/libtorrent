@@ -1768,7 +1768,6 @@ namespace aux {
 
 		TORRENT_ASSERT(!m_abort);
 
-		m_stats_counters.set_value(counters::has_incoming_connections, 0);
 		error_code ec;
 
 		if (m_abort) return;
@@ -1856,6 +1855,15 @@ namespace aux {
 			remove_iter = m_listen_sockets.erase(remove_iter);
 		}
 
+		// all sockets in there stayed the same. Only sockets after this point are
+		// new and should post alerts
+		auto const existing_sockets = m_listen_sockets.size();
+
+		m_stats_counters.set_value(counters::has_incoming_connections
+			, std::any_of(m_listen_sockets.begin(), m_listen_sockets.end()
+				, [](std::shared_ptr<listen_socket_t> const& l)
+				{ return l->incoming_connection; }));
+
 		// open new sockets on any endpoints that didn't match with
 		// an existing socket
 		for (auto const& ep : eps)
@@ -1889,12 +1897,15 @@ namespace aux {
 			return;
 		}
 
+		auto const new_sockets = span<std::shared_ptr<listen_socket_t>>(
+			m_listen_sockets).subspan(existing_sockets);
+
 		// now, send out listen_succeeded_alert for the listen sockets we are
 		// listening on
 		// TODO only post alerts for new sockets?
 		if (m_alerts.should_post<listen_succeeded_alert>())
 		{
-			for (auto const& l : m_listen_sockets)
+			for (auto const& l : new_sockets)
 			{
 				error_code err;
 				if (l->sock)
@@ -1938,7 +1949,7 @@ namespace aux {
 
 		if (map_ports)
 		{
-			for (auto const& s : m_listen_sockets)
+			for (auto const& s : new_sockets)
 			{
 				remap_ports(remap_natpmp_and_upnp, *s);
 			}
@@ -2368,6 +2379,10 @@ namespace aux {
 #endif
 			m_utp_socket_manager;
 
+		auto listen_socket = ls.lock();
+		if (listen_socket)
+			listen_socket->incoming_connection = true;
+
 		for (;;)
 		{
 			aux::array<udp_socket::packet, 50> p;
@@ -2404,7 +2419,6 @@ namespace aux {
 #ifndef TORRENT_DISABLE_DHT
 					if (m_dht && buf.size() > 20 && buf.front() == 'd' && buf.back() == 'e')
 					{
-						auto listen_socket = ls.lock();
 						if (listen_socket)
 							handled = m_dht->incoming_packet(listen_socket, packet.from, buf);
 					}
@@ -2531,7 +2545,7 @@ namespace aux {
 		error_code ec;
 		if (e)
 		{
-			tcp::endpoint ep = listener->local_endpoint(ec);
+			tcp::endpoint const ep = listener->local_endpoint(ec);
 #ifndef TORRENT_DISABLE_LOGGING
 			if (should_log())
 			{
@@ -2600,6 +2614,12 @@ namespace aux {
 		// proxy
 		if (m_settings.get_int(settings_pack::proxy_type) != settings_pack::none)
 			return;
+
+		auto listen = std::find_if(m_listen_sockets.begin(), m_listen_sockets.end()
+			, [&listener](std::shared_ptr<listen_socket_t> const& l)
+		{ return l->sock == listener; });
+		if (listen != m_listen_sockets.end())
+			(*listen)->incoming_connection = true;
 
 #ifdef TORRENT_USE_OPENSSL
 		if (ssl == transport::ssl)
