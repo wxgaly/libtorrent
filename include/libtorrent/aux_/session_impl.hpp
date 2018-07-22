@@ -208,7 +208,7 @@ namespace aux {
 		// client with the tracker only.
 		std::uint32_t tracker_key = 0;
 
-		// set ot true when we receive an incoming connection from this listen
+		// set to true when we receive an incoming connection from this listen
 		// socket
 		bool incoming_connection = false;
 	};

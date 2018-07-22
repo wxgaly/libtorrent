@@ -1706,7 +1706,7 @@ namespace aux {
 		if (ec || m_abort || !m_ip_notifier) return;
 		m_ip_notifier->async_wait([this] (error_code const& e)
 			{ this->wrap(&session_impl::on_ip_change, e); });
-		reopen_network_sockets(session_handle::reopen_map_ports);
+		reopen_network_sockets({});
 	}
 
 	void session_impl::interface_to_endpoints(std::string const& device, int const port
@@ -1881,11 +1881,6 @@ namespace aux {
 
 				TORRENT_ASSERT((s->incoming == duplex::accept_incoming) == bool(s->sock));
 				if (s->sock) async_accept(s->sock, s->ssl);
-				if (m_settings.get_bool(settings_pack::enable_natpmp))
-					start_natpmp(*s);
-				// since this is a new socket it needs to map ports
-				// even if the caller did not request re-mapping
-				if (!map_ports) remap_ports(remap_upnp, *s);
 			}
 		}
 
@@ -1902,7 +1897,6 @@ namespace aux {
 
 		// now, send out listen_succeeded_alert for the listen sockets we are
 		// listening on
-		// TODO only post alerts for new sockets?
 		if (m_alerts.should_post<listen_succeeded_alert>())
 		{
 			for (auto const& l : new_sockets)
@@ -1947,12 +1941,23 @@ namespace aux {
 
 		ec.clear();
 
-		if (map_ports)
+		if (m_settings.get_bool(settings_pack::enable_natpmp))
 		{
 			for (auto const& s : new_sockets)
-			{
+				start_natpmp(*s);
+		}
+
+		if (map_ports)
+		{
+			for (auto const& s : m_listen_sockets)
 				remap_ports(remap_natpmp_and_upnp, *s);
-			}
+		}
+		else
+		{
+			// new sockets need to map ports even if the caller did not request
+			// re-mapping
+			for (auto const& s : new_sockets)
+				remap_ports(remap_natpmp_and_upnp, *s);
 		}
 
 #if TORRENT_USE_I2P
@@ -5533,7 +5538,6 @@ namespace aux {
 			s.natpmp_mapper = std::make_shared<natpmp>(m_io_service, *this);
 			s.natpmp_mapper->start(s.local_endpoint.address(), s.device);
 		}
-		remap_ports(remap_natpmp, s);
 	}
 
 	namespace {
@@ -6686,7 +6690,10 @@ namespace aux {
 	{
 		INVARIANT_CHECK;
 		for (auto& s : m_listen_sockets)
+		{
 			start_natpmp(*s);
+			remap_ports(remap_natpmp, *s);
+		}
 	}
 
 	upnp* session_impl::start_upnp()
